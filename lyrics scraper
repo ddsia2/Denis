@@ -1,0 +1,71 @@
+
+import requests
+from bs4 import BeautifulSoup
+from collections import Counter
+from pprint import pprint
+
+class LyricsScraper:
+    def __init__(self, artist_id):
+        self.artist_id = artist_id
+        self.urls = []
+
+    def is_valid(self, word):
+        if "[" in word and "]" in word:
+            return False
+        return True
+
+    def extract_lyrics(self, url):
+        print(f"Fetching lyrics from {url}...")
+        r = requests.get(url)
+        if r.status_code != 200:
+            print("Page could not be fetched.")
+            return []
+
+        soup = BeautifulSoup(r.content, "html.parser")
+        lyrics = soup.find("div", class_="Lyrics__Container-sc-1ynbvzw-1 kUgSbL")
+        if not lyrics:
+            return self.extract_lyrics(url)  # Try again if lyrics not found
+
+        all_words = []
+        for sentence in lyrics.stripped_strings:
+            sentence_words = [word.strip(",").strip(".").lower() for word in sentence.split() if self.is_valid(word)]
+            all_words.extend(sentence_words)
+
+        return all_words
+
+    def get_all_urls(self):
+        page_number = 1
+        links = []
+        while True:
+            r = requests.get(f"https://genius.com/api/artists/{self.artist_id}/songs?page={page_number}&sort=popularity")
+            if r.status_code == 200:
+                print(f"Fetching page {page_number}")
+                response = r.json().get("response", {})
+                next_page = response.get("next_page")
+
+                # Extract song URLs from the API response
+                songs = response.get("songs")
+                links.extend([song.get("url") for song in songs])
+                page_number += 1
+
+                if not next_page:
+                    print("No more pages to fetch")
+                    break
+
+        self.urls = links
+
+    def get_all_words(self):
+        self.get_all_urls()
+        words = []
+        for url in self.urls[:5]:
+            lyrics = self.extract_lyrics(url=url)
+            words.extend(lyrics)
+
+        counter = Counter([w for w in words if len(w) > 10])
+        most_common_words = counter.most_common(15)
+        pprint(most_common_words)
+
+if __name__ == "__main__":
+    artist_id = input("Enter the artist identification:")  # Replace with the actual artist ID
+    scraper = LyricsScraper(artist_id)
+    scraper.get_all_words()
